@@ -37,34 +37,59 @@ class CreateOrderService {
       throw new AppError('Cliente não encontrado!');
     }
 
-    const productsIds = products.map(product => ({ id: product.id }));
+    const requestedProducts = await this.productsRepository.findAllById(
+      products,
+    );
 
-    const findProducts = await this.productsRepository.findAllById(productsIds);
-
-    if (findProducts.length === 0) {
+    if (!requestedProducts) {
       throw new AppError('Os produtos informados não foram encontrados!');
     }
 
-    const overQuantityProducts = findProducts.map(product =>
-      products.filter(p => p.quantity < product.quantity),
-    );
-
-    if (overQuantityProducts.length > 0) {
-      throw new AppError(
-        'Não existem produtos suficientes para a conclusão da compra!',
+    const productsList = products.map(product => {
+      const findProduct = requestedProducts.find(
+        requestedProduct => requestedProduct.id === product.id,
       );
-    }
 
-    const orderProducts = findProducts.map(product => ({
-      product_id: product.id,
-      quantity: product.quantity,
-      price: product.price,
-    }));
+      if (!findProduct) {
+        throw new AppError('Um dos produtos informados não existe!');
+      }
+
+      if (findProduct.quantity < product.quantity) {
+        throw new AppError(
+          'Não existem produtos suficientes para a conclusão da compra!',
+        );
+      }
+
+      return {
+        product_id: product.id,
+        price: findProduct.price,
+        quantity: product.quantity,
+      };
+    });
+
+    const updatedProducts = products.map(product => {
+      const findProduct = requestedProducts.find(
+        requestedProduct => requestedProduct.id === product.id,
+      );
+
+      if (!findProduct) {
+        throw new AppError('Produto não encontrado!');
+      }
+
+      const newQuantity = findProduct.quantity - product.quantity;
+
+      return {
+        id: findProduct.id,
+        quantity: newQuantity,
+      };
+    });
 
     const order = await this.ordersRepository.create({
       customer,
-      products: orderProducts,
+      products: productsList,
     });
+
+    await this.productsRepository.updateQuantity(updatedProducts);
 
     return order;
   }
